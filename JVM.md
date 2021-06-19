@@ -1625,3 +1625,308 @@ public static int m();
 
 `u2`类型的数据项，前者是字节码行号，后者是`Java`源码行号。
 
+
+
+### LocalVariableTable及LocalVariableTypeTable属性
+
+​		`LocalVariableTable`属性用于描述栈帧中局部变量表的变量与`Java`源码中定义的变量之间的关系，它也不是运行时必需的属性，但默认会生成到`Class`文件
+
+之中，可以在`Javac`中使用`-g:none`或`-g:vars`选项来取消或要求生成这项信息。如果没有生成这项属性，最大的影响就是当其他人引用这个方法时，所有的参数
+
+名称都将会丢失。而且在调试期间无法根据参数名称从上下文忠获得参数值。
+
+![](image/QQ截图20210618160030.png)
+
+​		`local_variable_info`项目代表了一个栈帧与源码中的局部变量的关联：
+
+![](image/QQ截图20210618160116.png)
+
+​		`start_pc`和`length`属性分别代表了这个局部变量的生命周期开始的字节码偏移量及其作用范围覆盖的长度，两者结合起来就是这个局部变量在字节码之中的
+
+作用域范围。
+
+​		`name_index`和`descriptor_index`都是指向常量池中`CONSTANT_Utf8_info`型常量的索引，分别代表了局部变量的名称以及这个局部变量的描述符。
+
+​		`index`是这个局部变量在栈帧的局部变量表中变量槽的位置。当这个变量数据类型是64位类型时`( doubl、long)`，它占用的变量槽为`index`和`index+1`两
+
+个。
+
+​		引入泛型之后，`LocalVariableTable`属性增加了一个姐妹属性：`LocalVariableTypeTable`。这个新增的属性结构与`LocalVariableTable`非常相似，仅仅是把
+
+记录的字段描述符的`descriptor_index`替换成了字段的特征签名。对于非泛型类型来说，描述符和特征签名能描述的信息是能吻合一致的，但是泛型引入之后，
+
+由于描述符中泛型的参数化类型被擦除掉，描述符就不能准确描述泛型类型了。因此出现了`LocalVariableTypeTable`属性，使用字段的特征签名来完成泛型的描
+
+述。
+
+
+
+### SourceFile及SourceDebugExtension属性
+
+​		`SourceFile`属性用于记录生成这个`Class`文件的源码文件名称。这个属性也是可选的，可以使用`Javac`的`-g:none`或`-g:source`选项来关闭或要求生成这项
+
+信息。在`Java`中，对于大多数的类来说，类名和文件名是一致的，但是有一些特殊情况（如内部类）例外。如果不生成这项属性，当抛出异常时，堆栈中将不会
+
+显示出错代码所属的文件名。这个属性是一个定长的属性：
+
+![](image/QQ截图20210618160702.png)
+
+​		`sourcefile_index`数据项是指向常量池中`CONSTANT_Utf8_info`型常量的索引，常量值是源码文件的文件名。
+
+​		为了方便在编译器和动态生成的`Class`中加入供程序员使用的自定义内容，在`JDK 5`时，新增了`SourceDebugExtension`属性用于存储额外的代码调试信息。
+
+典型的场景是在进行`JSP`文件调试时，无法通过`Java`堆栈来定位到`JSP`文件的行号。为这些非`Java`语言编写，却需要编译成字节码并运行在`Java`虚拟机中的程
+
+序提供了一个进行调试的标准机制，使用`SourceDebugExtension`属性就可以用于存储这个标准所新加入的调试信息。
+
+![](image/QQ截图20210618161315.png)
+
+​		`debug_ extension`存储的就是额外的调试信息，是一组通过变长`UTF-8`格式来表示的字符串。一个类中最多只允许存在一个`SourceDebugExtension`属性。
+
+
+
+### ConstantValue属性
+
+​		`ConstantValue`属性的作用是通知虚拟机自动为静态变量赋值。只有被`static`关键字修饰的变量（类变量)才可以使用这项属性。
+
+​		对于实例变量和静态变量，虚拟机对这两种变量赋值的方式和时刻都有所不同。对于实例变量的赋值是在实例构造器`<init>()`方法中进行的；而对于静态变
+
+量，则有两种方式可以选择：类构造器`<clinit>()`方法中或者使用`ConstantValue`属性。`Oracle`公司实现的`Javac`编译器的选择：如果静态常量，并且这个常量
+
+的数据类型是基本类型或者`java.lang.String`的话，就将会生成`ConstantValue`属性来进行初始化；如果这个静态变量没有被`final`修饰，或者并非基本类型及字
+
+符串，则将会选择在`<clinit>()`方法中进行初始化。
+
+![](image/QQ截图20210618162325.png)
+
+​		`ConstantValue`属性是一个定长属性，它的`attribute_length`数据项值必须固定为2。`constantvalue_index`数据项代表了常量池中一个字面量常量的引用，
+
+根据字段类型的不同，字面量可以是`CONSTANT_Long_info、CONSTANT_Float_info、CONSTANT_Double_info、CONSTANT_Integer_info、CONSTANT_String _info`常量中
+
+的一种。
+
+
+
+### InnerClasses属性
+
+​		`InnerClasses`属性用于记录内部类与宿主类之间的关联。如果一个类中定义了内部类，那编译器将会为它以及它所包含的内部类生成`InnerClasses`属性。
+
+![](image/QQ截图20210618163446.png)
+
+​		`number_of_classes`代表需要记录多少个内部类信息，每一个内部类的信息都由一个`inner_classes_info`表进行描述。
+
+![](image/QQ截图20210618163558.png)
+
+​		`inner_class_info_index`和`outer_class_info_index`都是指向常量池中`CONSTANT_Class_info`型常量的索引，分别代表了内部类和宿主类的符号引用。
+
+​		`inner_name_index`是指向常量池中`CONSTANT_Utf8_info`型常量的索引，代表这个内部类的名称，如果是匿名内部类，这项值为`0`。
+
+​		`inner_class_access_flags`是内部类的访问标志，类似于类的`access_flags `。
+
+![](image/QQ截图20210618163714.png)
+
+
+
+### Deprecated及Synthetic属性
+
+​		`Deprecated`和`Synthetic`两个属性都属于标志类型的布尔属性，只存在有和没有的区别，没有属性值的概念。
+
+​		`Deprecated`属性用于表示某个类、字段或者方法，已经被程序作者定为不再推荐使用，它可以通过代码中使用`@deprecated`注解进行设置。
+
+​		`Synthetic`属性代表此字段或者方法并不是由`Java`源码直接产生的，而是由编译器自行添加的，在`JDK 5`之后，标识一个类、字段或者方法是编译器自动产
+
+生的，也可以设置它们访问标志中的`ACC_SYNTHETIC`标志位。编译器通过生成一些在源代码中不存在的`Synthetic`方法、字段甚至是整个类的方式，实现了越权访
+
+问`(`越过`private`修饰器`)`或其他绕开了语言限制的功能，这可以算是一种早期优化的技巧，其中最典型的例子就是枚举类中自动生成的枚举元素数组和嵌套类的
+
+桥接方法。所有由不属于用户代码产生的类、方法及字段都应当至少设置`Syntheti`c属性或者`ACC_SYNTHETIC`标志位中的一项，唯一的例外是实例构造器`<init>`
+
+`()`方法和类构造器`<clinit>()`方法。
+
+![](image/QQ截图20210618164104.png)
+
+​		`attribute_length`数据项的值必须为`0x00000000`，因为没有任何属性值需要设置。
+
+
+
+### StackMapTable属性
+
+​		`StackMapTable`属性在`JDK 6`增加到`Class`文件规范之中，它是一个相当复杂的变长属性，位于`Code`属性的属性表中。这个属性会在虚拟机类加载的字节码
+
+验证阶段被新类型检查验证器使用，目的在于代替以前比较消耗性能的基于数据流分析的类型推导验证器。
+
+​		`StackMapTable`属性中包含零至多个栈映射帧，每个栈映射帧都显式或隐式地代表了一个字节码偏移量，用于表示执行到该字节码时局部变量表和操作数栈的
+
+验证类型。类型检查验证器会通过检查目标方法的局部变量和操作数栈所需要的类型来确定一段字节码指令是否符合逻辑约束。
+
+![](image/QQ截图20210618164507.png)
+
+​		对于版本号大于或等于`50.0(JDK 6)`的`Class`文件，如果方法的`Code`属性中没有附带`StackMapTable`属性，那就意味着它带有一个隐式的`StackMap`属性，这
+
+个`StackMap`属性的作用等同于`number_of_entries`值为`0`的`StackMapTable`属性。一个方法的`Code`属性最多只能有一个`StackMapTable`属性，否则将抛出
+
+`ClassFormatError`异常。
+
+
+
+### Signature属性
+
+​		Signature属性是一个可选的定长属性，可以出现于类、字段表和方法表结构的属性表中。在`JDK 5`之后，任何类、接口、初始化方法或成员的泛型签名如果
+
+包含了类型变量或参数化类型，则`Signature`属性会为它记录泛型签名信息。
+
+​		因为`Java`语言的泛型采用的是擦除法实现的伪泛型，字节码中所有的泛型信息编译在编译之后都通通被擦除掉。运行期做反射时无法获得泛型信息。
+
+`Signature`属性就是为了弥补这个缺陷而增设的，现在`Java`的反射`API`能够获取的泛型类型，最终的数据来源也是这个属性。
+
+![](image/QQ截图20210618170248.png)
+
+​		`signature_index`项的值必须是一个对常量池的有效索引。常量池在该索引处的项必须是`CONSTANT_Utf8_info`结构，表示类签名或方法类型签名或字段类型
+
+签名。如果当前的`Signature`属性是类文件的属性则这个结构表示类签名，如果当前的`Signature`属性是方法表的属性，则这个结构表示方法类型签名，如果当前
+
+`Signature`属性是字段表的属性，则这个结构表示字段类型签名。
+
+
+
+### BootstrapMethods属性
+
+​		`BootstrapMethods`属性在`JDK 7`时增加到`Class`文件规范之中，它是一个复杂的变长属性，位于类文件的属性表中。这个属性用于保存`invokedynamic`指令
+
+引用的引导方法限定符。
+
+​		如果某个类文件结构的常量池中曾经出现过`CONSTANT_InvokeDynamic_info`类型的常量，那么这个类文件的属性表中必须存在一个明确的`BootstrapMethods`属
+
+性，另外，即使`CONSTANT_InvokeDynamic_info`类型的常量在常量池中出现过多次，类文件的属性表中最多也只能有一个`BootstrapMethods`属性。
+
+![](image/QQ截图20210618170801.png)
+
+![](image/QQ截图20210618170817.png)
+
+​		`BootstrapMethods`属性里，`num_bootstrap_methods`项的值给出了`bootstrap_methods[]`数组中的引导方法限定符的数量。而`bootstrap_methods[]`数组的每
+
+个成员包含了一个指向常量池`CONSTANT_MethodHandle`结构的索引值，它代表了一个引导方法。还包含了这个引导方法静态参数的序列(可能为空)。
+
+`bootstrap_methods[]`数组的每个成员必须包含以下三项内容：
+
+​		`bootstrap_method_ref`：`bootstrap_method_ref`项的值必须是一个对常量池的有效索引。常量池在该索引处的值必须是一个`CONSTANT_MethodHandle_info`结
+
+构。
+		`num_bootstrap_arguments`：`num_bootstrap_arguments`项的值给出了`bootstrap_argu-ments[]`数组成员的数量。
+
+​		`bootstrap_arguments[]`：`bootstrap_arguments[]`数组的每个成员必须是一个对常量池的有效索引。常量池在该索引出必须是下列结构之一：
+
+`CONSTANT_String_info、CONSTANT_Class_info、CONSTANT_Integer_info、CONSTANT_Long _info、CONSTANT_Float_info、CONSTANT_Double_info、`
+
+`CONSTANT_MethodHandle_info或CONSTANT_MethodType_info`。
+
+
+
+### MethodParameters属性
+
+​		`MethodParameters`是在`JDK 8`时新加入到`Class`文件格式中的，它是一个用在方法表中的变长属性。`MethodParameters`的作用是记录方法的各个形参名称和
+
+信息。
+
+![](image/QQ截图20210618194033.png)
+
+![](image/QQ截图20210618194050.png)
+
+​		`name_index`是一个指向常量池`CONSTANT_Utf8_info`常量的索引值，代表了该参数的名称。而`access_flags`是参数的状态指示器，它可以包含以下三种状态
+
+中的一种或多种：
+
+​				1、`0x0010 (ACC_FINAL)`：表示该参数被`final`修饰。
+
+​				2、`0x1000 (ACC_SYNTHETIC)`：表示该参数并未出现在源文件中，是编译器自动生成的。
+
+​				3、`0x8000(ACC_MANDATED)`：表示该参数是在源文件中隐式定义的。`Java`语言中的典型场景是`this`关键字。
+
+
+
+### 模块化相关属性
+
+​		`JDK 9`的一个重量级功能是`Java`的模块化功能，因为模块描述文件最终是要编译成一个独立的`Class`文件来存储的，所以，`Class`文件格式也扩展了
+
+`Module、ModulePackages、ModuleMainClass`三个属性用于支持`Java`模块化相关功能。
+
+​		`Module`属性是一个非常复杂的变长属性，除了表示该模块的名称、版本、标志信息以外，还存储了这个模块`requires、exports、opens、uses、provides`定
+
+义的全部内容。
+
+![](image/QQ截图20210618194507.png)
+
+​		`module_name_index`是一个指向常量池`CONSTANT_Utf8_info`常量的索引值，代表了该模块的名称。而`module_flags`是模块的状态指示器，它可以包含以下三
+
+种状态中的一种或多种：
+
+​				1、`0x0020 (ACC_OPEN)`：表示该模块是开放的。
+
+​				2、`0x1000 (ACC_SYNTHETIC)`：表示该模块并未出现在源文件中，是编译器自动生成的。
+
+​				3、`0x8000 (ACC_MANDATED)`：表示该模块是在源文件中隐式定义的。
+
+​		`module_version_index`是一个指向常量池`CONSTANT_Utf8_info`常量的索引值，代表了该模块的版本号。
+
+​		后续的几个属性分别记录了模块的`requires、exports、opens、uses、provides`定义，它们的结构是基本相似的。
+
+![](image/QQ截图20210618194735.png)
+
+​		`exports`属性的每一元素都代表一个被模块所导出的包，`exports_index`是一个指向常量池`CONSTANT_Package_info`常量的索引值，代表了被该模块导出的
+
+包。`exports_flags`是该导出包的状态指示器，它可以包含以下两种状态中的一种或多种：
+
+​				1、`0x1000(ACC_SYNTHETIC)`：表示该导出包并未出现在源文件中，是编译器自动生成的。
+
+​				2、`0x8000 (ACC_MANDATED)`：表示该导出包是在源文件中隐式定义的。
+
+​		`exports_to_count`是该导出包的限定计数器，如果这个计数器为零，这说明该导出包是无限定的，即完全开放的，任何其他模块都可以访问该包中所有内
+
+容。如果该计数器不为零，则后面的`exports_to_index`是以计数器值为长度的数组，每个数组元素都是一个指向常量池中`CONSTANT_Module_info`常量的索引值，
+
+代表着只有在这个数组范围内的模块才被允许访问该导出包的内容。
+
+
+
+​		`ModulePackages`是另一个用于支持`Java`模块化的变长属性，它用于描述该模块中所有的包，不论是不是被`export`或者`open`的。
+
+![](image/QQ截图20210618195019.png)
+
+​		`package_count`是`package_index`数组的计数器，`package_index`中每个元素都是指向常量池`CONSTANT_Package_info`常量的索引值，代表了当前模块中的一
+
+个包。
+
+
+
+​		`ModuleMainClass`属性是一个定长属性，用于确定该模块的主类。
+
+![](image/QQ截图20210618195129.png)
+
+​		`main_class_index`是一个指向常量池`CONSTANT_Class_info`常量的索引值，代表了该模块的主类。
+
+
+
+### 运行时注解相关属性
+
+​		`JDK 5`时期为了存储源码中注解信息，Class文件同步增加了`RuntimeVisibleAnnotations、RuntimeInvisibleAnnotations、`
+
+`RuntimeVisibleParameterAnnotations、RuntimeInvisibleParameterAnnotations`四个属性。到了`JDK 8`时期，进一步加强了`Java`语言的注解使用范围，又新增类
+
+型注解，所以`Class`文件中也同步增加了`RuntimeVisibleTypeAnnotations、RuntimeInvisibleTypeAnnotations`两个属性。
+
+​		`RuntimeVisibleAnnotations`是一个变长属性，它记录了类、字段或方法的声明上记录运行时可见注解，当我们使用反射API来获取类、字段或方法上的注解
+
+时，返回值就是通过这个属性来取到的。
+
+![](image/QQ截图20210618195514.png)
+
+​		`num_annotations`是`annotations`数组的计数器，`annotations`中每个元素都代表了一个运行时可见的注解，注解在`Class`文件中以`annotation`结构来存
+
+储。
+
+![](image/QQ截图20210618195601.png)
+
+​		`type_index`是一个指向常量池`CONSTANT_Utf8_info`常量的索引值，该常量应以字段描述符的形式表示一个注解。`num_element_value_pairs`是
+
+`element_value_pairs`数组的计数器，`element_value_pairs`中每个元素都是一个键值对，代表该注解的参数和值。
+
