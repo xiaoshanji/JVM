@@ -2655,7 +2655,159 @@ public static final int value = 123;
 
 
 
+## 类加载器
+
+​		把类加载阶段中的通过一个类的全限定名来获取描述该类的二进制字节流这个动作放到`Java`虚拟机外部去实现，以便让应用程序自己决定如何去获取所需的
+
+类。实现这个动作的代码被称为类加载器。
+
+​		类加载器虽然只用于实现类的加载动作，但它在`Java`程序中起到的作用却远超类加载阶段。对于任意一个类，都必须由加载它的类加载器和这个类本身一起
+
+共同确立其在`Java`虚拟机中的唯一性，每一个类加载器，都拥有一个独立的类名称空间。即比较两个类是否相等`(`包括代表类的`Class`对象的`equals()`方法，
+
+`isAssignableFrom()`方法，`isInstance()`方法的返回结果，也包括了使用`instanceof`关键字做对象所属关系判定等各种情况`)`，只有在这两个类是由同一个类加
+
+载器加载前提下才有意义，否则，即使这两个类来源于同一个`Class`文件，被同一个`Java`虚拟机加载，只要加载它们的类加载器不同，那这两个类就必定不相
+
+等。
+
+```java
+public class StyleClassLoaderTest
+{
+    public static void main(String[] args) throws Exception
+    {
+        ClassLoader styleLoader = new ClassLoader() {
+            @Override
+            public Class<?> loadClass(String name) throws ClassNotFoundException {
+                try
+                {
+                    String fileName = name.substring(name.lastIndexOf(".") + 1) + ".class";
+                    InputStream is = getClass().getResourceAsStream(fileName);
+                    if(is == null)
+                    {
+                        return super.loadClass(name);
+                    }
+                    byte[] b = new byte[is.available()];
+                    is.read(b);
+                    return defineClass(name,b,0,b.length);
+                }
+                catch (Exception e)
+                {
+                    throw  new ClassNotFoundException(name);
+                }
+            }
+        };
+        Object o = styleLoader.loadClass("com.shanji.over.ten.StyleClassLoaderTest").newInstance();
+        System.out.println(o.getClass());
+        System.out.println(o instanceof com.shanji.over.ten.StyleClassLoaderTest); // false ，加载同一个类使用不同的类加载器
+    }
+}
+
+/*
+
+class com.shanji.over.ten.StyleClassLoaderTest
+false
+*/
+```
+
+​		站在`Java`虚拟机的角度来看，只存在两种不同的类加载器：一种是启动类加载器`(BootstrapClassLoader)`，这个类加载器使用`C++`语言实现，是虚拟机自身
+
+的一部分；另外一种就是其他所有的类加载器，这些类加载器都由`Java`语言实现，独立存在于虚拟机外部，并且全都继承自抽象类`java.lang ClassLoader`。
 
 
 
+### 启动类加载器
+
+​		启动类加载器`(Bootstrap Class Loader)`：这个类加载器负责加载存放在`<JAVA_HOME>\lib`目录，或者被`-Xbootclasspath`参数所指定的路径中存放的，而且
+
+是`Java`虚拟机能够识别的`(`按照文件名识别，如`rt.jar、tools.jar`，名字不符合的类库即使放在`lib`目录中也不会被加载`)`类库加载到虚拟机的内存中。启动
+
+类加载器无法被`Java`程序直接引用，用户在编写自定义类加载器时，如果需要把加载请求委派给引导类加载器去处理，那直接使用`null`代替即可。
+
+```java
+// Class类中的方法
+public ClassLoader getClassLoader() {
+        ClassLoader cl = getClassLoader0();
+        if (cl == null)
+            return null; // 返回 null 代表引用启动类加载器
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null) {
+            ClassLoader.checkClassLoaderPermission(cl, Reflection.getCallerClass());
+        }
+        return cl;
+}
+```
+
+
+
+### 扩展类加载器
+
+​		扩展类加载器`(Extension Class Loader)`：这个类加载器是在类`sun.misc.Launcher$ExtClassLoader`中以`Java`代码的形式实现的。它负责加载
+
+`<JAVA_HOME>\lib\ext`目录中，或者被`java.ext.dirs`系统变量所指定的路径中所有的类库。这是一种`Java`系统类库的扩展机制，`JDK`的开发团队允许用户将具
+
+有通用性的类库放置在`ext`目录里以扩展`Java SE`的功能，在`JDK 9`之后，这种扩展机制被模块化带来的天然的扩展能力所取代。由于扩展类加载器是由`Java`代
+
+码实现的，开发者可以直接在程序中使用扩展类加载器来加载`Class`文件。
+
+
+
+### 应用程序类加载器
+
+​		应用程序类加载器`(Application Class Loader)`：这个类加载器由`sun.misc.Launcher$AppClassLoader`来实现。由于应用程序类加载器是`ClassLoader`类中
+
+的`getSystemClassLoader()`方法的返回值，所以有些场合中也称它为系统类加载器。它负责加载用户类路径`(ClassPath)`上所有的类库，开发者同样可以直接在代
+
+码中使用这个类加载器。如果应用程序中没有自定义过自己的类加载器，一般情况下这个就是程序中默认的类加载器。
+
+![](image/classloader.jfif)
+
+## 双亲委派模型
+
+​		双亲委派模型要求除了顶层的启动类加载器外，其余的类加载器都应有自己的父类加载器。不过这里类加载器之间的父子关系一般不是以继承的关系来实现
+
+的，而是通常使用组合关系来复用父加载器的代码。
+
+​		工作过程是：如果一个类加载器收到了类加载的请求，它首先不会自己去尝试加载这个类，而是把这个请求委派给父类加载器去完成，每一个层次的类加载器
+
+都是如此，因此所有的加载请求最终都应该传送到最顶层的启动类加载器中，只有当父加载器反馈自己无法完成这个加载请求`(`它的搜索范围中没有找到所需的
+
+类`)`时，子加载器才会尝试自己去完成加载。
+
+```java
+// ClassLoader中的方法，实现了双亲委托模型
+protected Class<?> loadClass(String name, boolean resolve)
+        throws ClassNotFoundException
+    {
+        synchronized (getClassLoadingLock(name)) {
+            Class<?> c = findLoadedClass(name); // 检查类是否已经被加载过
+            if (c == null) {
+                long t0 = System.nanoTime();
+                try {
+                    // 如果父类加载器不为空则交给父类加载器去加载，否则交给启动类加载器去加载
+                    if (parent != null) {
+                        c = parent.loadClass(name, false);
+                    } else {
+                        c = findBootstrapClassOrNull(name);
+                    }
+                } catch (ClassNotFoundException e) {
+                }
+				
+                // 如果父类加载器和启动类加载器都没有加载成功，则尝试自己去加载
+                if (c == null) {
+                    long t1 = System.nanoTime();
+                    c = findClass(name);
+
+                    sun.misc.PerfCounter.getParentDelegationTime().addTime(t1 - t0);
+                    sun.misc.PerfCounter.getFindClassTime().addElapsedTimeFrom(t1);
+                    sun.misc.PerfCounter.getFindClasses().increment();
+                }
+            }
+            if (resolve) {
+                resolveClass(c);
+            }
+            return c;
+        }
+    }
+```
 
