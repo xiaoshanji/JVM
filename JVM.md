@@ -3039,9 +3039,11 @@ protected Class<?> loadClass(String name, boolean resolve)
 
 ​				`invokevirtual`：用于调用所有的虚方法。
 
-​				invokeinterface：用于调用接口方法，会在运行时再确定一个实现该接口的对象。
+​				`invokeinterface`：用于调用接口方法，会在运行时再确定一个实现该接口的对象。
 
-​				invokedynamic：先在运行时动态解析出调用点限定符所引用的方法，然后再执行该方法。
+​				`invokedynamic`：先在运行时动态解析出调用点限定符所引用的方法，然后再执行该方法。
+
+​		前四条指定的分派规则完全固化在虚拟机之中。
 
 ​		只要能被`invokestatic`和`invokespecial`指令调用的方法，都可以在解析阶段中确定唯一的调用版本，`Java`语言里符合这个条件的方法共有静态方法、私有
 
@@ -3093,11 +3095,129 @@ Object str = new String(1213); // Object 被称为静态类型或声明类型，
 
 
 
+## 动态类型语言
+
+​		动态类型语言核心特征：变量无类型而变量值才有类型。比如`JavaScript、Python`等，而与之相对的是静态类型语言，比如：`Java、C++`等。
+
+​		静态类型语言能够在编译期确定变量类型，最显著的好处是编译器可以提供全面严谨的类型检查，这样与数据类型相关的潜在问题就能在编码时被及时发现，
+
+利于稳定性及让项目容易达到更大的规模。而动态类型语言在运行期才确定类型，这可以为开发人员提供极大的灵活性，某些在静态类型语言中要花大量臃肿代码
+
+来实现的功能，由动态类型语言去做可能会很清晰简洁，清晰简洁通常也就意味着开发效率的提升。
 
 
 
+​		方法句柄的主要目的是在之前单纯依靠符号引用来确定调用的目标方法这条路之外，提供一种新的动态确定目标方法的机制。类似于`C/C++`中的函数指针或
+
+`C#`中的委托。
+
+```java
+public class MethodHandleTest
+{
+    static class ClassA
+    {
+        public void println(String s)
+        {
+            System.out.println(s);
+        }
+    }
+
+    public static void main(String[] args) throws Throwable
+    {
+        Object obj = System.currentTimeMillis() % 2 == 0 ? System.out : new ClassA();
+        getPrintlnMH(obj).invokeExact("xiaoshanshan");
+    }
+
+    private static MethodHandle getPrintlnMH(Object reveiver) throws Exception
+    {
+        // MethodType代表方法类型，第一个参数是返回值类型，后面的参数依次为方法对应的具体参数类型
+        MethodType mt = MethodType.methodType(void.class, String.class);
+        // 在指定类(第一个参数)中查找符合给定方法名称(第二个参数)，方法类型(第三个参数)，并且符合调用权限的方法句柄
+        return MethodHandles.lookup().findVirtual(reveiver.getClass(),"println",mt).bindTo(reveiver);
+    }
+}
+```
+
+​		方法`getPrintlnMH()`中实际上是模拟了`invokevirtual`指令的执行过程，只不过它的分派逻辑并非固化在`Class`文件的字节码上，而是通过一个由用户设计
+
+的`Java`方法来实现。而这个方法本身的返回值，可以视为对最终调用方法的一个引用。
+
+​		`MethodHandle`在使用方法和效果上与`Reflection(`反射`)`有众多相似之处。不过，也有以下这些区别：
+
+​				1、`Reflection`和`MethodHandle`机制本质上都是在模拟方法调用，但是`Reflection`是在模拟`Java`代码层面的方法调用，而`MethodHandle`是在模拟字节
+
+​		码层次的方法调用。在`MethodHandles.Lookup`上的3个方法`findStatic()、findVirtual()、findSpecial()`正是为了对应于`invokestatic`、`invokevirtual(`
+
+​		以及`invokeinterface)`和`invokespecial`这几条字节码指令的执行权限校验行为，而这些底层细节在使用`Reflection API`时是不需要关心的。
+
+​				2、`Reflection`中的`java.lang.reflect.Method`对象远比`MethodHandle`机制中的`java.lang.invoke.MethodHandle`对象所包含的信息来得多。前者是方
+
+​		法在`Java`端的全面映像，包含了方法的签名、描述符以及方法属性表中各种属性的`Java`端表示方式，还包括执行权限等的运行期信息，而后者仅包含执行
+
+​		该方法的相关信息。通俗的讲，`Reflection`是重量级，而`MethodHandle`是轻量级。
+
+​				3、由于`MethodHandle`是对字节码的方法指令调用的模拟，那理论上虚拟机在这方面做的各种优化，在`MethodHandle`上也应当可以采用类似思路去支
+
+​		持，而通过反射去调用方法则几乎不可能直接去实施各类调用点优化措施。
+
+​				4、`Reflection API`的设计目标是只为`Java`语言服务的，而`MethodHandle`则设计为可服务于所有`Java`虚拟机之上的语言。
 
 
 
+​		`invokedynamic`指令把如何查找目标方法的决定权从虚拟机转嫁到具体用户代码之中，有更高的自由度。
 
+​		每一处含有`invokedynamic`指令的位置都被称作动态调用点，这条指令的第一个参数不再是代表方法符号引用的`CONSTANT_Methodref_info`常量，而是变为
+
+`JDK 7`时新加入的`CONSTANT_InvokeDynamic_info`常量，从这个新常量中可以得到`3`项信息：
+
+​				1、引导方法：`BootstrapMethod`，该方法存放在新增的`BootstrapMethods`属性中。
+
+​				2、方法类型：`MethodType`。
+
+​				3、名称。
+
+​		引导方法是有固定的参数，并且返回值规定是`java.lang.invoke.CallSite`对象，这个对象代表了真正要执行的目标方法调用。根据
+
+`CONSTANT_InvokeDynamic_info`常量中提供的信息，虚拟机可以找到并且执行引导方法，从而获得一个`CallSite`对象，最终调用到要执行的目标方法上。
+
+```java
+public class MethodHandleTest
+{
+    class GrandGather
+    {
+        void thinking()
+        {
+            System.out.println("i am grandfather");
+        }
+    }
+
+    class Father extends GrandGather
+    {
+        void thinking()
+        {
+            System.out.println("i am father");
+        }
+    }
+
+    class Son extends Father
+    {
+        void thinking()
+        {
+            // 下面的代码实现了调用 GrandFather 中的thinking 方法
+            try
+            {
+                MethodType mt = MethodType.methodType(void.class);
+                Field impl_lookup = MethodHandles.Lookup.class.getDeclaredField("IMPL_LOOKUP");
+                impl_lookup.setAccessible(true);
+                MethodHandle mh = ((MethodHandles.Lookup) impl_lookup.get(null)).findSpecial(GrandGather.class, "thinking", mt, Father.class);
+                mh.invoke(this);
+            }
+            catch (Throwable e)
+            {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+```
 
